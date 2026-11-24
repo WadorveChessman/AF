@@ -65,60 +65,6 @@ function toast(m,err){
 }
 const modal=h=>{const m=$('#modal');if(!m)return;m.innerHTML=`<div class="sheet">${h}</div>`;m.hidden=false};
 const closeM=()=>{const m=$('#modal');if(m){m.hidden=true;m.innerHTML=''}};
-function askConfirm(message, {
-  title = 'Confirmer cette action',
-  confirmText = 'Confirmer',
-  danger = false
-} = {}) {
-  return new Promise(resolve => {
-    const old = document.getElementById('confirm-dialog');
-    if (old) old.remove();
-    const dialog = document.createElement('div');
-    dialog.id = 'confirm-dialog';
-    dialog.setAttribute('role', 'presentation');
-    const card = document.createElement('section');
-    card.className = 'confirm-card';
-    card.setAttribute('role', 'alertdialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-labelledby', 'confirm-title');
-    card.setAttribute('aria-describedby', 'confirm-message');
-    const heading = document.createElement('h2');
-    heading.id = 'confirm-title';
-    heading.textContent = title;
-    const text = document.createElement('p');
-    text.id = 'confirm-message';
-    text.textContent = message;
-    const actions = document.createElement('div');
-    actions.className = 'confirm-actions';
-    const cancel = document.createElement('button');
-    cancel.type = 'button';
-    cancel.className = 'btn alt';
-    cancel.textContent = 'Annuler';
-    const accept = document.createElement('button');
-    accept.type = 'button';
-    accept.className = `btn${danger ? ' confirm-danger' : ''}`;
-    accept.textContent = confirmText;
-    actions.append(cancel, accept);
-    card.append(heading, text, actions);
-    dialog.append(card);
-    document.body.append(dialog);
-    const finish = value => {
-      document.removeEventListener('keydown', onKey);
-      dialog.remove();
-      resolve(value);
-    };
-    const onKey = event => {
-      if (event.key === 'Escape') finish(false);
-    };
-    cancel.addEventListener('click', () => finish(false));
-    accept.addEventListener('click', () => finish(true));
-    dialog.addEventListener('click', event => {
-      if (event.target === dialog) finish(false);
-    });
-    document.addEventListener('keydown', onKey);
-    accept.focus();
-  });
-}
 
 function theme(){
   try{
@@ -820,7 +766,7 @@ const ACT={
   },
   async delc(id){
     if(db.comptes.some(c=>c.client_id===id)||db.prets.some(p=>p.client_id===id))throw new Error('Impossible : ce client a des comptes ou des prêts.');
-    if(!(await askConfirm('Supprimer ce client ?', {title:'Supprimer le client',confirmText:'Supprimer',danger:true})))return;
+    if(!confirm('Supprimer ce client ?'))return;
     const {error}=await sb.from('clients').delete().eq('id',id);
     if(error)throw error;
     toast('Client supprimé.');location.hash='#/clients';
@@ -853,7 +799,7 @@ const ACT={
   },
   async ccloture(id){
     const cp=compteById(id);if(!cp)return;
-    if(!(await askConfirm(`Clôturer le compte ${cp.numero_compte_interne} ? Le solde de ${money(cp.solde)} sera remis au client.`,{title:"Clôturer le compte",confirmText:"Clôturer",danger:true})))return;
+    if(!confirm(`Clôturer le compte ${cp.numero_compte_interne} ? Le solde de ${money(cp.solde)} sera remis au client.`))return;
     await sbRpc('rpc_cloturer_compte',{p_compte:id});
     toast('Compte clôturé.');
     await loadAll();render();
@@ -875,7 +821,7 @@ const ACT={
   },
   async apret(id){
     const p=pretById(id);if(!p||p.statut!=='DEMANDE')throw new Error('Ce prêt n\'est pas approuvable.');
-    if(!(await askConfirm(`Approuver et décaisser ${money(p.montant-(+p.frais_dossier||0))} (frais de dossier ${money(p.frais_dossier)} retenus) ?`,{title:"Approuver le prêt",confirmText:"Approuver"})))return;
+    if(!confirm(`Approuver et décaisser ${money(p.montant-(+p.frais_dossier||0))} (frais de dossier ${money(p.frais_dossier)} retenus) ?`))return;
     await sbRpc('rpc_approuver_pret',{p_pret:id});
     toast('Prêt approuvé et décaissé.');
     await loadAll();render();
@@ -961,7 +907,7 @@ const ACT={
   },
   async utoggle(id){
     const u=findUser(id);if(!u)return;
-    if(!(await askConfirm(`${u.actif?"Désactiver":"Réactiver"} ${u.nom_complet||u.username} ?`,{title:u.actif?"Désactivation utilisateur":"Réactivation utilisateur",confirmText:u.actif?"Désactiver":"Réactiver",danger:u.actif})))return;
+    if(!confirm(`${u.actif?'Désactiver':'Réactiver'} ${u.nom_complet||u.username} ?`))return;
     const {error}=await sb.from('users').update({actif:!u.actif}).eq('id',id);
     if(error)throw error;
     toast(u.actif?'Utilisateur désactivé.':'Utilisateur réactivé.');
@@ -1001,7 +947,7 @@ const ACT={
   async enttoggle(id){
     const e=SA.entreprises.find(x=>x.id===id);if(!e)return;
     const msg=e.actif?`Suspendre l'accès de « ${e.nom} » ? Tous ses utilisateurs seront bloqués immédiatement.`:`Réactiver l'accès de « ${e.nom} » ?`;
-    if(!(await askConfirm(msg,{title:e.actif?"Suspendre entreprise":"Réactiver entreprise",confirmText:e.actif?"Suspendre":"Réactiver",danger:e.actif})))return;
+    if(!confirm(msg))return;
     await sbRpc('sa_toggle_entreprise',{p_id:id,p_actif:!e.actif});
     toast(e.actif?'Accès suspendu.':'Accès réactivé.');
     await loadSA();render();
