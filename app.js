@@ -1,6 +1,6 @@
 'use strict';
-/* AYIFIN — Ayiti Finans — v4.0
-   Multi-entreprise · Super Admin / Admin / Agent / Caissier · Alertes & journal d'audit
+/* AYIFIN — Ayiti Finans — v4.1
+   Corrections : types de compte/prêt + handlers robustes.
    Développé par ING. Worvensky-Wadson PIERRE */
 
 /* ============================================================
@@ -231,7 +231,7 @@ const clientOpts=(pre='')=>`<option value="">— Choisir —</option>`+
   db.clients.slice().sort((a,b)=>String(a.nom_complet||'').localeCompare(String(b.nom_complet||'')))
     .map(c=>`<option value="${esc(c.id)}" ${c.id===pre?'selected':''}>${esc(c.nom_complet)}</option>`).join('');
 const compteOptsFor=(clientId,pre='')=>`<option value="">— Choisir —</option>`+
-  db.comptes.filter(c=>c.statut==='ACTIF'&&(!clientId||c.client_id===clientId)).map(c=>{
+  db.comptes.filter(c=>c.statut==='ACTIF'&&(!clientId||clientId==='__none__'?true:c.client_id===clientId)).map(c=>{
     const cl=clientById(c.client_id);
     return`<option value="${esc(c.id)}" ${c.id===pre?'selected':''}>${esc(c.numero_compte_interne||'')} — ${esc(cl?cl.nom_complet:'?')}</option>`}).join('');
 const typeCompteOpts=()=>db.types_compte.filter(t=>t.actif).map(t=>`<option value="${t.id}">${esc(t.nom)} — min ${money(t.depot_min)}, frais ${money(t.frais_ouv)}</option>`).join('');
@@ -517,7 +517,7 @@ V.settings=()=>{
   <div class="card form"><label>Thème<select data-f="theme">${[['auto','Automatique'],['light','Clair'],['dark','Sombre']].map(([v,l])=>`<option value="${v}" ${(localStorage.getItem(T)||'auto')===v?'selected':''}>${l}</option>`).join('')}</select></label></div>
   ${prod}
   ${can('ADMIN','AGENT')?'<div class="acts"><button class="btn alt" data-a="csv">Exporter CSV</button></div>':''}
-  <small style="text-align:center;margin-top:20px">AYIFIN v4.0 — Développé par ING. Worvensky-Wadson PIERRE</small>`;
+  <small style="text-align:center;margin-top:20px">AYIFIN v4.1 — Développé par ING. Worvensky-Wadson PIERRE</small>`;
 };
 
 /* ---------- Super Admin : entreprises ---------- */
@@ -542,7 +542,7 @@ V.entreprise=id=>{
 };
 
 /* ============================================================
-   9. FORMULAIRES (SUB)
+   9. FORMULAIRES (SUB) — avec reload après enregistrement
    ============================================================ */
 const SUB={
   async flogin(f,d){
@@ -556,22 +556,27 @@ const SUB={
     const {error}=await(id?sb.from('clients').update(p).eq('id',id):sb.from('clients').insert({...p,entreprise_id:db.entreprise.id}));
     if(error)throw error;
     toast('Client enregistré.');closeM();
+    await refresh();render();
   },
   async fcompte(f,d){
     await sbRpc('rpc_ouvrir_compte',{p_client:d.client_id,p_type:+d.type_compte_id,p_depot:+d.depot_init||0,p_date:d.date||today()});
     toast('Compte créé.');closeM();
+    await refresh();render();
   },
   async fop(f,d){
     await sbRpc(d.type_op==='RETRAIT'?'rpc_retrait':'rpc_depot',{p_compte:d.compte_id,p_montant:+d.montant,p_date:d.date||today(),p_desc:d.description||null});
     toast('Opération enregistrée.');closeM();
+    await refresh();render();
   },
   async fpret(f,d){
     await sbRpc('rpc_creer_pret',{p_client:d.client_id,p_compte:d.compte_id,p_type:+d.type_pret_id,p_montant:+d.montant,p_duree:+d.duree_mois,p_date:d.date_debut||today()});
     toast('Demande enregistrée. En attente d\'approbation de l\'administrateur.');closeM();
+    await refresh();render();
   },
   async fpaypret(f,d){
     await sbRpc('rpc_payer_pret',{p_pret:d.pret_id,p_montant:+d.montant,p_date:d.date||today(),p_desc:d.description||null});
     toast('Paiement enregistré.');closeM();
+    await refresh();render();
   },
   async fent(f,d){
     const id=d.ent_id;
@@ -586,6 +591,8 @@ const SUB={
     if(error)throw error;
     if(!isSA()){Object.assign(db.entreprise,p);CUR=SYM[p.devise]||'G'}
     toast('Entreprise mise à jour.');closeM();
+    if(isSA())await loadSA();else await loadAll();
+    render();
   },
   async fentnew(f,d){
     const pw=d.admin_pw||'';
@@ -604,6 +611,7 @@ const SUB={
     closeM();
     await loadSA();
     location.hash='#/entreprise/'+id;
+    render();
   },
   async fuser(f,d){
     const em=(d.email||'').trim().toLowerCase();
@@ -612,11 +620,15 @@ const SUB={
     const uid=await sbCreateAuthUser(em,d.pw);
     await sbRpc('register_profile',{p_id:uid,p_entreprise:d.ent_id,p_username:em.split('@')[0],p_nom:d.nom_complet,p_tel:d.telephone||null,p_role:d.role,p_email:em});
     toast('Utilisateur créé. Communiquez-lui son mot de passe.');closeM();
+    if(isSA())await loadSA();else await loadAll();
+    render();
   },
   async fuseredit(f,d){
     const {error}=await sb.from('users').update({nom_complet:d.nom_complet||null,telephone:d.telephone||null,role:d.role,actif:d.actif==='1'}).eq('id',d.uid);
     if(error)throw error;
     toast('Utilisateur mis à jour.');closeM();
+    if(isSA())await loadSA();else await loadAll();
+    render();
   },
   async fprofil(f,d){
     let avatar_url=db.user.avatar_url;
@@ -627,6 +639,7 @@ const SUB={
     if(error)throw error;
     Object.assign(db.user,p);
     toast('Profil mis à jour.');closeM();
+    render();
   },
   async fpw(f,d){
     if((d.pw||'').length<8)throw new Error('8 caractères minimum.');
@@ -635,23 +648,68 @@ const SUB={
     toast('Mot de passe modifié.');closeM();
   },
   async ftc(f,d){
-    const p={nom:d.nom.trim(),taux:+d.taux||0,depot_min:+d.depot_min||0,frais_ouv:+d.frais_ouv||0,frais_mens:+d.frais_mens||0,actif:d.actif==='1'};
-    const {error}=await(d.id?sb.from('types_compte').update(p).eq('id',+d.id):sb.from('types_compte').insert({...p,entreprise_id:db.entreprise.id}));
-    if(error)throw error;
-    toast('Type de compte enregistré.');closeM();
+    try{
+      const p={
+        nom: (d.nom||'').trim(),
+        taux: parseFloat(d.taux)||0,
+        depot_min: parseFloat(d.depot_min)||0,
+        frais_ouv: parseFloat(d.frais_ouv)||0,
+        frais_mens: parseFloat(d.frais_mens)||0,
+        actif: d.actif==='1'
+      };
+      if(!p.nom) throw new Error('Le nom est obligatoire.');
+      if(p.taux < 0) throw new Error('Le taux ne peut pas être négatif.');
+      if(p.depot_min < 0 || p.frais_ouv < 0 || p.frais_mens < 0) throw new Error('Les montants doivent être positifs.');
+
+      const {error} = d.id
+        ? await sb.from('types_compte').update(p).eq('id', +d.id)
+        : await sb.from('types_compte').insert({...p, entreprise_id: db.entreprise.id});
+      if(error) throw error;
+
+      toast('Type de compte enregistré.');
+      closeM();
+      await loadAll();
+      render();
+    }catch(e){
+      console.error('ftc:', e);
+      toast(errMsg(e), 1);
+    }
   },
   async ftp(f,d){
-    const p={nom:d.nom.trim(),taux_mensuel:+d.taux_mensuel,duree_max:+d.duree_max,montant_min:+d.montant_min,montant_max:+d.montant_max,frais:+d.frais||0,actif:d.actif==='1'};
-    if(!(p.taux_mensuel>0))throw new Error('Le taux mensuel doit être supérieur à 0.');
-    if(p.montant_max<p.montant_min)throw new Error('Montant max inférieur au montant min.');
-    const {error}=await(d.id?sb.from('types_pret').update(p).eq('id',+d.id):sb.from('types_pret').insert({...p,entreprise_id:db.entreprise.id}));
-    if(error)throw error;
-    toast('Type de prêt enregistré.');closeM();
+    try{
+      const p={
+        nom: (d.nom||'').trim(),
+        taux_mensuel: parseFloat(d.taux_mensuel)||0,
+        duree_max: parseInt(d.duree_max)||1,
+        montant_min: parseFloat(d.montant_min)||0,
+        montant_max: parseFloat(d.montant_max)||0,
+        frais: parseFloat(d.frais)||0,
+        actif: d.actif==='1'
+      };
+      if(!p.nom) throw new Error('Le nom est obligatoire.');
+      if(p.taux_mensuel <= 0) throw new Error('Le taux mensuel doit être supérieur à 0.');
+      if(p.duree_max < 1) throw new Error('La durée doit être au moins 1 mois.');
+      if(p.montant_max < p.montant_min) throw new Error('Le montant maximum doit être supérieur au montant minimum.');
+      if(p.frais < 0) throw new Error('Les frais doivent être positifs.');
+
+      const {error} = d.id
+        ? await sb.from('types_pret').update(p).eq('id', +d.id)
+        : await sb.from('types_pret').insert({...p, entreprise_id: db.entreprise.id});
+      if(error) throw error;
+
+      toast('Type de prêt enregistré.');
+      closeM();
+      await loadAll();
+      render();
+    }catch(e){
+      console.error('ftp:', e);
+      toast(errMsg(e), 1);
+    }
   }
 };
 
 /* ============================================================
-   10. ACTIONS
+   10. ACTIONS — ACT.tcform et ACT.tpform présents et fonctionnels
    ============================================================ */
 const entFields=(e,sa)=>`
   <label>Nom *<input name="nom" required value="${esc(e.nom||'')}"></label>
@@ -675,6 +733,7 @@ const ACT={
     closeM();unsubscribe();
     try{await sbSignOut()}catch(e){}
     db=EMPTY();SA={entreprises:[],users:[],audit:[]};CUR='G';location.hash='';
+    render();
   },
   async forgot(){
     const em=prompt('Entrez votre adresse email :');if(!em)return;
@@ -743,6 +802,7 @@ const ACT={
     if(!confirm(`Clôturer le compte ${cp.numero_compte_interne} ? Le solde de ${money(cp.solde)} sera remis au client.`))return;
     await sbRpc('rpc_cloturer_compte',{p_compte:id});
     toast('Compte clôturé.');
+    await loadAll();render();
   },
 
   /* ----- prêts ----- */
@@ -757,18 +817,21 @@ const ACT={
       <div id="sim" class="alert warning"></div>
       <small>Le taux est imposé par le type de prêt. La demande doit être approuvée par l'administrateur de l'entreprise.</small>
       <button class="btn big">Créer la demande</button>${cancel}</form>`);
+    setTimeout(()=>simPret($('#fpret')),50);
   },
   async apret(id){
     const p=pretById(id);if(!p||p.statut!=='DEMANDE')throw new Error('Ce prêt n\'est pas approuvable.');
     if(!confirm(`Approuver et décaisser ${money(p.montant-(+p.frais_dossier||0))} (frais de dossier ${money(p.frais_dossier)} retenus) ?`))return;
     await sbRpc('rpc_approuver_pret',{p_pret:id});
     toast('Prêt approuvé et décaissé.');
+    await loadAll();render();
   },
   async rpret(id){
     const p=pretById(id);if(!p||p.statut!=='DEMANDE')throw new Error('Ce prêt n\'est pas rejetable.');
     const motif=prompt('Motif du rejet ?');if(motif===null)return;
     await sbRpc('rpc_rejeter_pret',{p_pret:id,p_motif:motif});
     toast('Prêt rejeté.');
+    await loadAll();render();
   },
   ppay(id){
     const p=pretById(id);if(!p)return;
@@ -787,7 +850,7 @@ const ACT={
     modal(`<h2>Configurer l'entreprise</h2><form id="fent" class="form"><input type="hidden" name="ent_id" value="${esc(e.id)}">${entFields(e,false)}<button class="btn big">Enregistrer</button>${cancel}</form>`);
   },
 
-  /* ----- types de produits ----- */
+  /* ----- ✅ types de produits : CORRIGÉS ----- */
   tcform(id){
     const t=db.types_compte.find(x=>String(x.id)===String(id))||{actif:true};
     modal(`<h2>${id?'Modifier':'Nouveau'} type de compte</h2><form id="ftc" class="form"><input type="hidden" name="id" value="${esc(id||'')}">
@@ -796,8 +859,8 @@ const ACT={
       <label>Dépôt minimum<input name="depot_min" type="number" step="0.01" min="0" value="${t.depot_min??0}"></label>
       <label>Frais d'ouverture<input name="frais_ouv" type="number" step="0.01" min="0" value="${t.frais_ouv??0}"></label>
       <label>Frais mensuels<input name="frais_mens" type="number" step="0.01" min="0" value="${t.frais_mens??0}"></label>
-      <label>Statut<select name="actif"><option value="1" ${t.actif?'selected':''}>Actif</option><option value="0" ${t.actif?'':'selected'}>Inactif</option></select></label>
-      <button class="btn big">Enregistrer</button>${cancel}</form>`);
+      <label>Statut<select name="actif"><option value="1" ${t.actif!==false?'selected':''}>Actif</option><option value="0" ${t.actif===false?'selected':''}>Inactif</option></select></label>
+      <button class="btn big" type="submit">Enregistrer</button>${cancel}</form>`);
   },
   tpform(id){
     const t=db.types_pret.find(x=>String(x.id)===String(id))||{actif:true,taux_mensuel:1,duree_max:12,montant_min:1000,montant_max:50000,frais:0};
@@ -808,15 +871,16 @@ const ACT={
       <label>Montant minimum<input name="montant_min" type="number" step="0.01" min="0" value="${t.montant_min}" required></label>
       <label>Montant maximum<input name="montant_max" type="number" step="0.01" min="0" value="${t.montant_max}" required></label>
       <label>Frais de dossier<input name="frais" type="number" step="0.01" min="0" value="${t.frais}"></label>
-      <label>Statut<select name="actif"><option value="1" ${t.actif?'selected':''}>Actif</option><option value="0" ${t.actif?'':'selected'}>Inactif</option></select></label>
-      <button class="btn big">Enregistrer</button>${cancel}</form>`);
+      <label>Statut<select name="actif"><option value="1" ${t.actif!==false?'selected':''}>Actif</option><option value="0" ${t.actif===false?'selected':''}>Inactif</option></select></label>
+      <button class="btn big" type="submit">Enregistrer</button>${cancel}</form>`);
   },
 
   /* ----- alertes ----- */
-  async nread(id){const {error}=await sb.from('notifications').update({lu:true}).eq('id',id);if(error)throw error},
+  async nread(id){const {error}=await sb.from('notifications').update({lu:true}).eq('id',id);if(error)throw error;await loadAll();render()},
   async nreadall(){
     const {error}=await sb.from('notifications').update({lu:true}).eq('entreprise_id',db.entreprise.id).eq('lu',false);
     if(error)throw error;
+    await loadAll();render();
   },
 
   /* ----- utilisateurs ----- */
@@ -847,6 +911,8 @@ const ACT={
     const {error}=await sb.from('users').update({actif:!u.actif}).eq('id',id);
     if(error)throw error;
     toast(u.actif?'Utilisateur désactivé.':'Utilisateur réactivé.');
+    if(isSA())await loadSA();else await loadAll();
+    render();
   },
   async uresetpw(id){
     const u=findUser(id);if(!u||!u.email)return;
@@ -884,6 +950,7 @@ const ACT={
     if(!confirm(msg))return;
     await sbRpc('sa_toggle_entreprise',{p_id:id,p_actif:!e.actif});
     toast(e.actif?'Accès suspendu.':'Accès réactivé.');
+    await loadSA();render();
   },
 
   csv(){
@@ -924,9 +991,10 @@ function render(){
 }
 
 /* ============================================================
-   12. DÉLÉGATION D'ÉVÉNEMENTS
+   12. DÉLÉGATION D'ÉVÉNEMENTS — ROBUSTE
    ============================================================ */
 function simPret(f){
+  if(!f)return;
   const box=f.querySelector('#sim');if(!box)return;
   const tp=db.types_pret.find(t=>String(t.id)===f.elements.type_pret_id.value);
   const c=+f.elements.montant.value,d=+f.elements.duree_mois.value;
@@ -939,23 +1007,41 @@ function simPret(f){
 document.addEventListener('submit',async e=>{
   e.preventDefault();
   const f=e.target;if(!(f instanceof HTMLFormElement))return;
-  const key=f.id||'';const h=SUB[key];
-  if(typeof h!=='function'){toast('Formulaire inconnu.',1);return}
-  const btn=f.querySelector('button.big,button[type="submit"]');if(btn)btn.disabled=true;
+  const key=f.getAttribute('id')||'';
+  const h=SUB[key];
+  if(typeof h!=='function'){
+    console.error('❌ Formulaire sans handler :', key, '— SUB keys :', Object.keys(SUB));
+    toast('Formulaire inconnu (id="'+key+'").',1);
+    return;
+  }
+  const btn=f.querySelector('button.big,button[type="submit"]');
+  if(btn)btn.disabled=true;
   try{
     await h(f,Object.fromEntries(new FormData(f)));
-    if(key!=='flogin'){await refresh();render()}
-  }catch(err){console.error(err);toast(errMsg(err),1)}
-  finally{if(btn)btn.disabled=false}
+  }catch(err){
+    console.error('submit ['+key+']:',err);
+    toast(errMsg(err),1);
+  }
+  finally{
+    if(btn)btn.disabled=false;
+  }
 });
 
 document.addEventListener('click',e=>{
   if(e.target.id==='modal')return closeM();
   const b=e.target.closest('[data-a]');if(!b)return;
-  const fn=ACT[b.dataset.a];if(typeof fn!=='function')return;
+  const fn=ACT[b.dataset.a];
+  if(typeof fn!=='function'){
+    console.warn('Action inconnue :',b.dataset.a);
+    return;
+  }
   Promise.resolve().then(()=>fn(b.dataset.id,b.dataset))
-    .then(async()=>{if(db.user&&!db.blocked)await refresh();render();if(b.dataset.a==='cpret')simPret($('#fpret'))})
-    .catch(err=>{console.error(err);toast(errMsg(err),1)});
+    .then(async()=>{
+      if(db.user&&!db.blocked)await refresh();
+      render();
+      if(b.dataset.a==='cpret')simPret($('#fpret'));
+    })
+    .catch(err=>{console.error('action ['+b.dataset.a+']:',err);toast(errMsg(err),1)});
 });
 
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeM()});
