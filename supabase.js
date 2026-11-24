@@ -2,8 +2,8 @@
 /* AYIFIN — Connecteur Supabase v4
    La clé "publishable/anon" est publique par conception : la sécurité repose sur le RLS de la base. */
 
-const SUPABASE_URL = 'https://myqhbcdpaupphmepyufz.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_ORLo5kzk_L8q1OhD-6fFPQ_YIKJgcKu';
+const SUPABASE_URL = 'https://urrnnbjdoroibkixoenu.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_ZsZ9FrSLGXZ6azZOkm2yNQ_BRss85d5';
 
 let sb = null;      // client principal (session de l'utilisateur connecté)
 let sbTmp = null;   // client secondaire (sans session) : sert à créer les comptes d'authentification
