@@ -1,24 +1,41 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AYIFIN — Ayiti Finans</title>
-<meta name="theme-color" content="#0b1f4b">
-<meta name="robots" content="noindex">
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon.svg">
-<link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <title>AYIFIN — Ayiti Finans</title>
+  <meta name="theme-color" content="#0b1f4b">
+  <meta name="robots" content="noindex">
+
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="AYIFIN">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<div id="app"></div>
-<div id="modal" hidden></div>
-<div id="toast" role="status"></div>
+  <div id="app"></div>
+  <div id="modal" hidden></div>
+  <div id="toast" role="status" aria-live="polite"></div>
 
-<!-- Supabase SDK -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase.js"></script>
-<script src="app.js"></script>
+  <!-- Supabase SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./supabase.js"></script>
+  <script src="./app.js"></script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js")
+          .catch((error) => console.warn("Service Worker:", error));
+      });
+    }
+  </script>
 </body>
 </html>
