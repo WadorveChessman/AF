@@ -32,7 +32,3 @@ Chaque opération d'un non-admin génère une **alerte temps réel** pour l'admi
 - Paiement : intérêts d'abord puis capital, refus de sur-paiement, échéances marquées PAYÉ automatiquement, retard détecté automatiquement.
 - Retrait refusé si solde ou caisse insuffisants ; clôture refusée si prêt actif ; un client en retard ne peut pas obtenir un nouveau prêt.
 - Un client ayant des comptes/prêts ne peut pas être supprimé.
-
-## Pourquoi votre ancienne version échouait
-- L'utilisateur n'avait pas de ligne dans `public.users` → `current_entreprise_id()` = NULL → le RLS bloquait tout (403, clients non enregistrés).
-- Les messages `Permissions policy violation: unload` et `ERR_CONNECTION_CLOSED` viennent de l'aperçu intégré/du réseau, pas de votre code.
