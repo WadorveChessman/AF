@@ -1,8 +1,7 @@
 'use strict';
-/* AYIFIN — Ayiti Finans — v4.2
+/* AYIFIN — Ayiti Finans — v4.1
    Corrections : types de compte/prêt + handlers robustes.
    Ajout : suppression d'entreprise + gestion automatique des contrats.
-   Ajout : CAISSIER peut créer/modifier des clients (UI + garde-fous JS).
    Développé par ING. Worvensky-Wadson PIERRE | 4010 4317 */
 
 /* ============================================================
@@ -56,9 +55,6 @@ const isAdmin=()=>role()==='ADMIN';
 const can=(...r)=>r.includes(role());
 const ROLE_LBL={SUPERADMIN:'Super Admin',ADMIN:'Administrateur',AGENT:'Agent de crédit',CAISSIER:'Caissier'};
 const T3=['ADMIN','AGENT','CAISSIER'];
-/* Rôles autorisés à créer / modifier un client (la suppression reste ADMIN) */
-const CLIENT_W=['ADMIN','AGENT','CAISSIER'];
-const canClient=()=>can(...CLIENT_W);
 
 /* ============================================================
    3. UI
@@ -303,8 +299,7 @@ const tDash=()=>{
   ${pend.length?`<h2>📝 Prêts à approuver (${pend.length})</h2>${pend.slice(0,5).map(pretRow).join('')}`:''}
   ${alertes?`<h2>⚠️ Alertes de retard</h2>${alertes}`:''}
   ${cn?`<div class="acts">
-    ${canClient()?'<a class="btn" href="#/clients">+ Client</a>':''}
-    ${can('ADMIN','AGENT')?'<a class="btn alt" href="#/prets">+ Prêt</a>':''}
+    ${can('ADMIN','AGENT')?'<a class="btn" href="#/clients">+ Client</a><a class="btn alt" href="#/prets">+ Prêt</a>':''}
     <a class="btn alt" href="#/operations">Opération</a>
     ${can('ADMIN','AGENT')?'<a class="btn alt" href="#/rapports">Rapports</a>':''}
   </div>`:''}
@@ -350,17 +345,15 @@ const clist=()=>{
     return `<a class="row" href="#/client/${esc(c.id)}"><div><b>${esc(c.nom_complet)}</b><small>${esc(c.nif_cin||'')} · ${esc(c.telephone||'')}</small></div><div class="amt"><b>${money(solde)}</b><small>${cs.length} compte(s)</small></div></a>`;
   }).join('')||empty('Aucun client');
 };
-/* CAISSIER : bouton « + Client » visible */
-V.clients=()=>`<div class="bar"><input id="q" data-f="q" placeholder="Rechercher…" value="${esc(F.q||'')}">${canClient()?'<button class="btn" data-a="cform">+ Client</button>':''}</div><div id="clist">${clist()}</div>`;
+V.clients=()=>`<div class="bar"><input id="q" data-f="q" placeholder="Rechercher…" value="${esc(F.q||'')}">${can('ADMIN','AGENT')?'<button class="btn" data-a="cform">+ Client</button>':''}</div><div id="clist">${clist()}</div>`;
 
 V.client=id=>{
   const c=clientById(id);if(!c)return empty('Client introuvable');
   const cs=db.comptes.filter(x=>x.client_id===id),prets=db.prets.filter(p=>p.client_id===id);
-  /* CAISSIER : bouton « Modifier » visible ; « Supprimer » reste réservé à l'ADMIN */
   return `<div class="card"><h2 style="margin:0">${esc(c.nom_complet)}</h2>
     <small>NIF/CIN : ${esc(c.nif_cin||'')} · Tél : ${esc(c.telephone||'')}</small>
     <small>${esc(c.adresse||'')}${c.ville?', '+esc(c.ville):''}${c.profession?' · '+esc(c.profession):''}</small>
-    <div class="acts">${canClient()?`<button class="btn" data-a="cform" data-id="${esc(id)}">Modifier</button>`:''}${isAdmin()?`<button class="btn del" data-a="delc" data-id="${esc(id)}">Supprimer</button>`:''}</div></div>
+    <div class="acts">${can('ADMIN','AGENT')?`<button class="btn" data-a="cform" data-id="${esc(id)}">Modifier</button>`:''}${isAdmin()?`<button class="btn del" data-a="delc" data-id="${esc(id)}">Supprimer</button>`:''}</div></div>
   <h2>Comptes (${cs.length})</h2>
   ${cs.map(cp=>{const t=typeCompteById(cp.type_compte_id);return`<a class="row" href="#/compte/${esc(cp.id)}"><div><b>${esc(cp.numero_compte_interne||'')}</b>${statutBadge(cp.statut)}<small>${esc(t?t.nom:'?')}</small></div><div class="amt green">${money(cp.solde)}</div></a>`}).join('')||empty('Aucun compte')}
   <button class="btn big" data-a="ccompte" data-id="${esc(id)}">+ Ouvrir un compte</button>
@@ -531,7 +524,7 @@ V.settings=()=>{
   <div class="card form"><label>Thème<select data-f="theme">${[['auto','Automatique'],['light','Clair'],['dark','Sombre']].map(([v,l])=>`<option value="${v}" ${(localStorage.getItem(T)||'auto')===v?'selected':''}>${l}</option>`).join('')}</select></label></div>
   ${prod}
   ${can('ADMIN','AGENT')?'<div class="acts"><button class="btn alt" data-a="csv">Exporter CSV</button></div>':''}
-  <small style="text-align:center;margin-top:20px">AYIFIN v4.2 — Développé par ING. Worvensky-Wadson PIERRE</small>`;
+  <small style="text-align:center;margin-top:20px">AYIFIN v4.1 — Développé par ING. Worvensky-Wadson PIERRE</small>`;
 };
 
 /* ---------- Super Admin : entreprises ---------- */
@@ -581,7 +574,6 @@ const SUB={
     await initSession();
   },
   async fclient(f,d){
-    if(!canClient())throw new Error('Action non autorisée pour votre rôle.');
     const id=d.client_id||'';
     const p={nom_complet:d.nom_complet.trim(),nif_cin:d.nif_cin.trim(),telephone:d.telephone.trim(),email:d.email||null,
       adresse:d.adresse||null,ville:d.ville||null,date_naissance:d.date_naissance||null,sexe:d.sexe||'N',profession:d.profession||null};
@@ -803,7 +795,6 @@ const ACT={
 
   /* ----- clients ----- */
   cform(id){
-    if(!canClient())throw new Error('Action non autorisée pour votre rôle.');
     const c=db.clients.find(x=>x.id===id)||{};
     modal(`<h2>${id?'Modifier le client':'Nouveau client'}</h2><form id="fclient" class="form">
       <input type="hidden" name="client_id" value="${esc(id||'')}">
@@ -819,7 +810,6 @@ const ACT={
       <button class="btn big">Enregistrer</button>${cancel}</form>`);
   },
   async delc(id){
-    if(!isAdmin())throw new Error('Seul l\'administrateur peut supprimer un client.');
     if(db.comptes.some(c=>c.client_id===id)||db.prets.some(p=>p.client_id===id))throw new Error('Impossible : ce client a des comptes ou des prêts.');
     if(!confirm('Supprimer ce client ?'))return;
     const {error}=await sb.from('clients').delete().eq('id',id);
@@ -947,7 +937,7 @@ const ACT={
       <label>Téléphone<input name="telephone"></label>
       <label>Rôle<select name="role">${roleOpts('AGENT')}</select></label>
       <label>Mot de passe initial (8 car. min.)<input name="pw" type="text" minlength="8" required autocomplete="off"></label>
-      <small><b>Administrateur</b> : tout + approbation des prêts · <b>Agent</b> : clients, comptes, demandes de prêt · <b>Caissier</b> : clients (création/modification), dépôts, retraits, paiements.</small>
+      <small><b>Administrateur</b> : tout + approbation des prêts · <b>Agent</b> : clients, comptes, demandes de prêt · <b>Caissier</b> : dépôts, retraits, paiements.</small>
       <button class="btn big">Créer l'utilisateur</button>${cancel}</form>`);
   },
   uedit(id){
