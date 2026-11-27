@@ -1,5 +1,5 @@
 'use strict';
-/* AYIFIN — Connecteur Supabase v4
+/* AYIFIN — Connecteur Supabase v4.1
    La clé "publishable/anon" est publique par conception : la sécurité repose sur le RLS de la base. */
 
 const SUPABASE_URL = 'https://urrnnbjdoroibkixoenu.supabase.co';
@@ -116,4 +116,33 @@ async function sbUploadPublic(bucket, path, file){
   const {error} = await sb.storage.from(bucket).upload(path, file, {upsert:true, contentType:file.type});
   if(error) throw error;
   return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+/* ============================================================
+   SUPERADMIN — Gestion des entreprises et contrats
+   ============================================================ */
+async function sbDeleteEntreprise(entId){
+  return await sbRpc('sa_delete_entreprise', { p_id: entId });
+}
+
+async function sbApplyPlan(entId, plan, dureeMois, prix, maxUsers){
+  return await sbRpc('sa_apply_plan', {
+    p_entreprise: entId,
+    p_plan: plan,
+    p_duree_mois: dureeMois ?? null,
+    p_prix: prix ?? null,
+    p_max_users: maxUsers ?? null
+  });
+}
+
+async function sbContratsAlertes(){
+  return await sbRpc('sa_contrats_alertes');
+}
+
+async function sbSuspendExpired(){
+  return await sbRpc('sa_suspend_expired');
+}
+
+async function sbContratHistorique(entId){
+  return await sbRpc('sa_contrat_historique', { p_entreprise: entId });
 }
