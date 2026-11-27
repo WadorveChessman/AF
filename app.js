@@ -1,6 +1,7 @@
 'use strict';
 /* AYIFIN — Ayiti Finans — v4.1
    Corrections : types de compte/prêt + handlers robustes.
+   Ajout : suppression d'entreprise + gestion automatique des contrats.
    Développé par ING. Worvensky-Wadson PIERRE */
 
 /* ============================================================
@@ -310,19 +311,25 @@ const entRow=e=>{
   const exp=e.date_contrat_fin&&e.date_contrat_fin<today();
   return `<a class="row" href="#/entreprise/${esc(e.id)}"><div class="who">${logo(e,40)}<div><b>${esc(e.nom)}</b>${statutBadge(e.actif?'ACTIF':'SUSPENDU')}${exp?statutBadge('EXPIRE'):''}<small>${e.nb_users_actifs}/${e.max_users} utilisateurs · ${e.nb_clients} clients · ${e.nb_prets} prêts actifs</small></div></div><div class="amt">${money(e.epargne)}<small>épargne</small></div></a>`;
 };
+
 const saDash=()=>{
   const E=SA.entreprises,n=k=>E.reduce((s,e)=>s+(+e[k]||0),0);
   const lim=iso(new Date(Date.now()+30*864e5));
   const al=E.filter(e=>e.date_contrat_fin&&e.date_contrat_fin<=lim).map(e=>{
     const exp=e.date_contrat_fin<today();
-    return `<a class="alert ${exp?'danger':'warning'}" style="display:block" href="#/entreprise/${esc(e.id)}"><b>${esc(e.nom)}</b> — contrat ${exp?'expiré le':'expire le'} ${fd(e.date_contrat_fin)}</a>`}).join('');
+    const jours=Math.ceil((new Date(e.date_contrat_fin)-new Date(today()))/864e5);
+    return `<a class="alert ${exp?'danger':'warning'}" style="display:block" href="#/entreprise/${esc(e.id)}"><b>${esc(e.nom)}</b> — contrat ${exp?'expiré le':'expire le'} ${fd(e.date_contrat_fin)} ${!exp?`(J-${jours})`:''}</a>`}).join('');
   return `<div class="grid">
     ${card('Entreprises',E.length)}${card('Actives',E.filter(e=>e.actif).length,'green')}${card('Suspendues',E.filter(e=>!e.actif).length,'red')}
     ${card('Utilisateurs',n('nb_users'))}${card('Clients',n('nb_clients'))}${card('Comptes',n('nb_comptes'))}
     ${card('Épargne totale',money(n('epargne')),'green')}${card('Encours prêts',money(n('encours')),'red')}
   </div>
   ${al?`<h2>⚠️ Contrats à surveiller</h2>${al}`:''}
-  <div class="acts"><button class="btn" data-a="entnew">+ Nouvelle entreprise</button></div>
+  <div class="acts">
+    <button class="btn" data-a="entnew">+ Nouvelle entreprise</button>
+    <button class="btn alt" data-a="contratsalertes">🔔 Alertes contrats</button>
+    <button class="btn alt" data-a="suspendexpired">⏸ Suspendre les expirés</button>
+  </div>
   <h2>Entreprises</h2>${E.map(entRow).join('')||empty('Aucune entreprise. Créez la première.')}`;
 };
 V.dashboard=()=>isSA()?saDash():tDash();
@@ -526,23 +533,40 @@ const elist=()=>{
   return SA.entreprises.filter(e=>!q||String(e.nom||'').toLowerCase().includes(q)).map(entRow).join('')||empty('Aucune entreprise');
 };
 V.entreprises=()=>`<div class="bar"><input id="eq" data-f="q" placeholder="Rechercher une entreprise…" value="${esc(F.q||'')}"><button class="btn" data-a="entnew">+ Entreprise</button></div><div id="elist">${elist()}</div>`;
+
 V.entreprise=id=>{
   const e=SA.entreprises.find(x=>x.id===id);if(!e)return empty('Entreprise introuvable');
   const us=SA.users.filter(u=>u.entreprise_id===id);
   const exp=e.date_contrat_fin&&e.date_contrat_fin<today();
+  // Calcul jours restants
+  let joursHtml='';
+  if(e.date_contrat_fin){
+    const jours=Math.ceil((new Date(e.date_contrat_fin)-new Date(today()))/864e5);
+    const cls=jours<0?'danger':jours<=7?'danger':jours<=15?'warning':'';
+    joursHtml=`<div class="alert ${cls}">📅 Contrat : ${jours<0?'EXPIRÉ depuis '+Math.abs(jours)+' j':jours+' jour(s) restant(s)'}</div>`;
+  }
   return `<div class="card"><div class="who">${logo(e,52)}<div><h2 style="margin:0">${esc(e.nom)}</h2>${statutBadge(e.actif?'ACTIF':'SUSPENDU')}${exp?statutBadge('EXPIRE'):''}<small>${esc(e.slogan||'')}</small></div></div>
     <small>${esc(e.adresse||'')} · ${esc(e.telephone||'')} · ${esc(e.email||'')}</small>
     <small>Plan ${esc(e.plan)} · Devise ${esc(e.devise)} · Contrat : ${fd(e.date_contrat_debut)} → ${e.date_contrat_fin?fd(e.date_contrat_fin):'illimité'}</small>
+    ${e.prix_contrat?`<small>Prix : ${money(e.prix_contrat)} · Durée : ${e.duree_mois} mois</small>`:''}
+    ${joursHtml}
     ${e.notes?`<small>Notes : ${esc(e.notes)}</small>`:''}
     <div class="kpi" style="margin-top:12px">${card('Clients',e.nb_clients)}${card('Comptes',e.nb_comptes)}${card('Épargne',money(e.epargne),'green')}${card('Encours prêts',money(e.encours),'red')}</div>
-    <div class="acts"><button class="btn" data-a="entedit" data-id="${esc(id)}">Modifier</button><button class="btn ${e.actif?'del':''}" data-a="enttoggle" data-id="${esc(id)}">${e.actif?'Suspendre l\'accès':'Réactiver l\'accès'}</button></div></div>
+    <div class="acts">
+      <button class="btn" data-a="entedit" data-id="${esc(id)}">Modifier</button>
+      <button class="btn alt" data-a="entplan" data-id="${esc(id)}">Plan / Renouveler</button>
+      <button class="btn ${e.actif?'del':''}" data-a="enttoggle" data-id="${esc(id)}">${e.actif?'Suspendre l\'accès':'Réactiver l\'accès'}</button>
+      <button class="btn del" data-a="entdelete" data-id="${esc(id)}">🗑 Supprimer définitivement</button>
+    </div></div>
+  <h2>Historique contrats</h2>
+  <div class="acts"><button class="btn alt" data-a="enthisto" data-id="${esc(id)}">Voir l'historique</button></div>
   <h2>Utilisateurs (${e.nb_users_actifs}/${e.max_users})</h2>
   <div class="acts"><button class="btn" data-a="unew" data-id="${esc(id)}">+ Utilisateur</button></div>
   ${us.map(u=>userRow(u,false)).join('')||empty('Aucun utilisateur')}`;
 };
 
 /* ============================================================
-   9. FORMULAIRES (SUB) — avec reload après enregistrement
+   9. FORMULAIRES (SUB)
    ============================================================ */
 const SUB={
   async flogin(f,d){
@@ -705,11 +729,32 @@ const SUB={
       console.error('ftp:', e);
       toast(errMsg(e), 1);
     }
+  },
+  /* ---------- SUPERADMIN : formulaire de plan ---------- */
+  async fentplan(f,d){
+    try{
+      const plan=d.plan;
+      const duree=plan==='CUSTOM'?parseInt(d.duree_mois):null;
+      const prix=plan==='CUSTOM'?parseFloat(d.prix):null;
+      const maxu=plan==='CUSTOM'&&d.max_users?parseInt(d.max_users):null;
+      if(plan==='CUSTOM'){
+        if(!(duree>0))throw new Error('Durée invalide.');
+        if(!(prix>=0))throw new Error('Prix invalide.');
+      }
+      await sbApplyPlan(d.ent_id,plan,duree,prix,maxu);
+      toast('Plan appliqué et contrat mis à jour.');
+      closeM();
+      await loadSA();
+      render();
+    }catch(e){
+      console.error('fentplan:',e);
+      toast(errMsg(e),1);
+    }
   }
 };
 
 /* ============================================================
-   10. ACTIONS — ACT.tcform et ACT.tpform présents et fonctionnels
+   10. ACTIONS
    ============================================================ */
 const entFields=(e,sa)=>`
   <label>Nom *<input name="nom" required value="${esc(e.nom||'')}"></label>
@@ -850,7 +895,7 @@ const ACT={
     modal(`<h2>Configurer l'entreprise</h2><form id="fent" class="form"><input type="hidden" name="ent_id" value="${esc(e.id)}">${entFields(e,false)}<button class="btn big">Enregistrer</button>${cancel}</form>`);
   },
 
-  /* ----- ✅ types de produits : CORRIGÉS ----- */
+  /* ----- types de produits ----- */
   tcform(id){
     const t=db.types_compte.find(x=>String(x.id)===String(id))||{actif:true};
     modal(`<h2>${id?'Modifier':'Nouveau'} type de compte</h2><form id="ftc" class="form"><input type="hidden" name="id" value="${esc(id||'')}">
@@ -953,6 +998,96 @@ const ACT={
     await loadSA();render();
   },
 
+  /* ============================================================
+     SUPERADMIN — Suppression d'entreprise
+     ============================================================ */
+  async entdelete(id){
+    const e=SA.entreprises.find(x=>x.id===id);
+    if(!e)throw new Error('Entreprise introuvable');
+    const saisie=prompt(
+      `⚠️ SUPPRESSION DÉFINITIVE\n\n`+
+      `Entreprise : ${e.nom}\n`+
+      `Toutes ses données (clients, comptes, prêts, utilisateurs…) seront effacées.\n\n`+
+      `Tapez le nom exact « ${e.nom} » pour confirmer :`
+    );
+    if(saisie===null)return;
+    if(saisie.trim()!==e.nom){toast('Nom incorrect. Suppression annulée.',1);return;}
+    await sbDeleteEntreprise(id);
+    toast('Entreprise supprimée définitivement.');
+    await loadSA();
+    location.hash='#/entreprises';
+    render();
+  },
+
+  /* ============================================================
+     SUPERADMIN — Appliquer / renouveler un plan
+     ============================================================ */
+  entplan(id){
+    const e=SA.entreprises.find(x=>x.id===id);
+    if(!e)return;
+    modal(`<h2>Plan / Renouvellement</h2>
+      <small>Entreprise : <b>${esc(e.nom)}</b></small>
+      <form id="fentplan" class="form">
+        <input type="hidden" name="ent_id" value="${esc(id)}">
+        <label>Plan<select name="plan" required>
+          <option value="STANDARD">STANDARD — 4 500 HTG / 3 mois / 3 users</option>
+          <option value="PRO">PRO — 15 000 HTG / 6 mois / 8 users</option>
+          <option value="PREMIUM">PREMIUM — 48 000 HTG / 12 mois / 20 users</option>
+          <option value="CUSTOM">LICENCE PERSONNALISÉE</option>
+        </select></label>
+        <label>Durée (mois) — CUSTOM uniquement<input name="duree_mois" type="number" min="1" value="${e.duree_mois||3}"></label>
+        <label>Prix (HTG) — CUSTOM uniquement<input name="prix" type="number" step="0.01" min="0" value="${e.prix_contrat||0}"></label>
+        <label>Utilisateurs max — CUSTOM uniquement<input name="max_users" type="number" min="1" value="${e.max_users||10}"></label>
+        <small>Les champs durée/prix/max_users ne sont utilisés que si le plan choisi est CUSTOM.</small>
+        <button class="btn big" type="submit">Appliquer le plan</button>${cancel}
+      </form>`);
+  },
+
+  /* ============================================================
+     SUPERADMIN — Alertes contrats
+     ============================================================ */
+  async contratsalertes(){
+    const rows=await sbContratsAlertes();
+    if(!rows||!rows.length){toast('Aucun contrat à surveiller.');return;}
+    modal(`<h2>Alertes contrats</h2>
+      <div class="card">
+        ${rows.map(r=>`<div class="row" style="margin-bottom:6px">
+          <div><b>${esc(r.nom)}</b><small>${esc(r.plan)} · fin ${fd(r.date_fin)}</small></div>
+          <div class="amt ${r.niveau_alerte==='EXPIRE'?'red':r.niveau_alerte==='OK'?'green':'or'}">
+            ${r.jours_restants} j
+            ${r.niveau_alerte!=='OK'?`<small>${esc(r.niveau_alerte)}</small>`:''}
+          </div></div>`).join('')}
+      </div>`);
+  },
+
+  /* ============================================================
+     SUPERADMIN — Suspendre les entreprises expirées
+     ============================================================ */
+  async suspendexpired(){
+    if(!confirm('Suspendre automatiquement toutes les entreprises dont le contrat est expiré ?'))return;
+    const n=await sbSuspendExpired();
+    toast(`${n??0} entreprise(s) suspendue(s).`);
+    await loadSA();
+    render();
+  },
+
+  /* ============================================================
+     SUPERADMIN — Historique des contrats
+     ============================================================ */
+  async enthisto(id){
+    try{
+      const rows=await sbContratHistorique(id);
+      if(!rows||!rows.length){toast('Aucun historique de contrat.');return;}
+      modal(`<h2>Historique des contrats</h2>
+        <div class="card">
+          ${rows.map(r=>`<div class="row" style="margin-bottom:6px">
+            <div><b>${esc(r.plan)}</b><small>${fd(r.date_debut)} → ${fd(r.date_fin)} · ${r.duree_mois} mois</small></div>
+            <div class="amt green">${money(r.prix)}</div>
+          </div>`).join('')}
+        </div>`);
+    }catch(e){toast(errMsg(e),1)}
+  },
+
   csv(){
     const rows=[['Type','Date','Client','Montant','Description']];
     db.depots.forEach(d=>{const cp=compteById(d.compte_id),cl=cp?clientById(cp.client_id):null;rows.push(['DEPOT',d.date_operation,cl?cl.nom_complet:'',d.montant,d.description||''])});
@@ -991,7 +1126,7 @@ function render(){
 }
 
 /* ============================================================
-   12. DÉLÉGATION D'ÉVÉNEMENTS — ROBUSTE
+   12. DÉLÉGATION D'ÉVÉNEMENTS
    ============================================================ */
 function simPret(f){
   if(!f)return;
