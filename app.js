@@ -2,7 +2,7 @@
 /* AYIFIN — Ayiti Finans — v4.1
    Corrections : types de compte/prêt + handlers robustes.
    Ajout : suppression d'entreprise + gestion automatique des contrats.
-   Développé par ING. Worvensky-Wadson PIERRE */
+   Développé par ING. Worvensky-Wadson PIERRE | 4010 4317 */
 
 /* ============================================================
    1. UTILITAIRES
